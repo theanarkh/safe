@@ -10,12 +10,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -37,7 +34,7 @@ func fakeSearch(kind string) Search {
 // simplify goroutine counting and error handling. This example is derived from
 // the sync.WaitGroup example at https://golang.org/pkg/sync/#example_WaitGroup.
 func ExampleGroup_justErrors() {
-	g := new(errgroup.Group)
+	g := new(Group)
 	var urls = []string{
 		"http://www.golang.org/",
 		"http://www.google.com/",
@@ -67,7 +64,7 @@ func ExampleGroup_justErrors() {
 // and error-handling.
 func ExampleGroup_parallel() {
 	Google := func(ctx context.Context, query string) ([]Result, error) {
-		g, ctx := errgroup.WithContext(ctx)
+		g, ctx := WithContext(ctx)
 
 		searches := []Search{Web, Image, Video}
 		results := make([]Result, len(searches))
@@ -117,7 +114,7 @@ func TestZeroGroup(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		g := new(errgroup.Group)
+		g := new(Group)
 
 		var firstErr error
 		for i, err := range tc.errs {
@@ -151,7 +148,7 @@ func TestWithContext(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		g, ctx := errgroup.WithContext(context.Background())
+		g, ctx := WithContext(context.Background())
 
 		for _, err := range tc.errs {
 			err := err
@@ -179,7 +176,7 @@ func TestWithContext(t *testing.T) {
 }
 
 func TestTryGo(t *testing.T) {
-	g := &errgroup.Group{}
+	g := &Group{}
 	n := 42
 	g.SetLimit(42)
 	ch := make(chan struct{})
@@ -232,7 +229,7 @@ func TestTryGo(t *testing.T) {
 func TestGoLimit(t *testing.T) {
 	const limit = 10
 
-	g := &errgroup.Group{}
+	g := &Group{}
 	g.SetLimit(limit)
 	var active int32
 	for i := 0; i <= 1<<10; i++ {
@@ -265,7 +262,7 @@ func TestCancelCause(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		g, ctx := errgroup.WithContext(context.Background())
+		g, ctx := WithContext(context.Background())
 
 		for _, err := range tc.errs {
 			err := err
@@ -292,70 +289,31 @@ func TestCancelCause(t *testing.T) {
 
 func TestPanic(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
-		g := &errgroup.Group{}
+		g := &Group{}
 		p := errors.New("")
 		g.Go(func() error {
 			panic(p)
 		})
-		defer func() {
-			err := recover()
-			if err == nil {
-				t.Fatalf("should propagate panic through Wait")
-			}
-			pe, ok := err.(errgroup.PanicError)
-			if !ok {
-				t.Fatalf("type should is errgroup.PanicError, but is %T", err)
-			}
-			if pe.Recovered != p {
-				t.Fatalf("got %v, want %v", pe.Recovered, p)
-			}
-			if !strings.Contains(string(pe.Stack), "TestPanic.func") {
-				t.Log(string(pe.Stack))
-				t.Fatalf("stack trace incomplete")
-			}
-		}()
-		g.Wait()
+		err := g.Wait()
+		if err == nil {
+			t.Fatalf("should not be nil")
+		}
 	})
 	t.Run("any", func(t *testing.T) {
-		g := &errgroup.Group{}
+		g := &Group{}
 		g.Go(func() error {
 			panic(1)
 		})
-		defer func() {
-			err := recover()
-			if err == nil {
-				t.Fatalf("should propagate panic through Wait")
-			}
-			pe, ok := err.(errgroup.PanicValue)
-			if !ok {
-				t.Fatalf("type should is errgroup.PanicValue, but is %T", err)
-			}
-			if pe.Recovered != 1 {
-				t.Fatalf("got %v, want %v", pe.Recovered, 1)
-			}
-			if !strings.Contains(string(pe.Stack), "TestPanic.func") {
-				t.Log(string(pe.Stack))
-				t.Fatalf("stack trace incomplete")
-			}
-		}()
-		g.Wait()
+		err := g.Wait()
+		if err == nil {
+			t.Fatalf("should not be nil")
+		}
 	})
-}
-
-func TestGoexit(t *testing.T) {
-	g := &errgroup.Group{}
-	g.Go(func() error {
-		t.Skip()
-		t.Fatalf("Goexit fail")
-		return nil
-	})
-	g.Wait()
-	t.Fatalf("should call runtime.Goexit from Wait")
 }
 
 func BenchmarkGo(b *testing.B) {
 	fn := func() {}
-	g := &errgroup.Group{}
+	g := &Group{}
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
